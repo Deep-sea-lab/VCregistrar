@@ -1,10 +1,12 @@
 # VCregistrar
 
+![VCregistrar Banner](https://raw.githubusercontent.com/Deep-sea-lab/VCregistrar/main/public/banner.png)
+
 A centralized authentication system built on Next.js 15 and Auth.js v5. It supports OAuth providers (GitHub, Microsoft Entra ID) and secure email/password login, with JWT-based session management, rate limiting, CSRF protection, and audit logging out of the box.
 
 ## Languages
 
-- [English](#vcregistrar) (default)
+- [English](#vcregistrar)
 - [简体中文](./README.zh-CN.md)
 
 ## Features

@@ -1,10 +1,12 @@
 # VCregistrar
 
+![VCregistrar Banner](https://raw.githubusercontent.com/Deep-sea-lab/VCregistrar/main/public/banner.png)
+
 一个基于 Next.js 15 和 Auth.js v5 构建的集中式身份认证系统。支持 OAuth（GitHub、Microsoft Entra ID）以及安全的邮箱密码登录，并提供基于 JWT 的会话管理、限流防护、CSRF 保护、审计日志等生产级安全特性。
 
 ## 语言 / Languages
 
-- [English](./README.md) (default)
+- [English](./README.md)
 - 简体中文
 
 ## 项目特性
