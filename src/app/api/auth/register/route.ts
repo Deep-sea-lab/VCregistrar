@@ -3,6 +3,7 @@ import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { validateCSRF, csrfErrorResponse } from "@/lib/csrf";
 import { logAudit, getClientIpFromRequest, getUserAgentFromRequest } from "@/lib/audit-log";
+import { verifyHCaptcha, isHCaptchaEnabled } from "@/lib/hcaptcha";
 
 const BCRYPT_ROUNDS = 14;
 const MAX_BODY_SIZE = 1024 * 10; // 10KB limit
@@ -51,18 +52,21 @@ export async function POST(req: NextRequest) {
     let name: string | undefined;
     let email: string;
     let password: string;
+    let hcaptchaToken: string | undefined;
 
     if (contentType.includes("application/json")) {
       const body = await req.json();
       name = body.name;
       email = body.email;
       password = body.password;
+      hcaptchaToken = body.hcaptchaToken;
     } else {
       const text = await req.text();
       const params = new URLSearchParams(text);
       name = params.get("name") || undefined;
       email = params.get("email") || "";
       password = params.get("password") || "";
+      hcaptchaToken = params.get("hcaptchaToken") || undefined;
     }
 
     if (!email || !password) {
@@ -115,6 +119,31 @@ export async function POST(req: NextRequest) {
         url.searchParams.set("callbackUrl", callbackUrl);
       }
       return NextResponse.redirect(url);
+    }
+
+    // hCaptcha 校验(若 HCAPTCHA_SECRET 已配置)
+    if (isHCaptchaEnabled()) {
+      const captchaResult = await verifyHCaptcha(hcaptchaToken, {
+        remoteIp: ipAddress,
+      });
+      if (!captchaResult.success) {
+        await logAudit({
+          action: "REGISTRATION_ATTEMPT",
+          email,
+          ipAddress,
+          status: "failure",
+          details: `hCaptcha verification failed: ${
+            captchaResult["error-codes"]?.join(",") || "unknown"
+          }`,
+          userAgent,
+        });
+        const url = new URL("/register", req.url);
+        url.searchParams.set("error", "HCAPTCHA_FAILED");
+        if (isValidRedirectUrl(callbackUrl)) {
+          url.searchParams.set("callbackUrl", callbackUrl);
+        }
+        return NextResponse.redirect(url);
+      }
     }
 
     // Validate password complexity

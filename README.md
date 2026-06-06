@@ -15,13 +15,14 @@ A centralized authentication system built on Next.js 15 and Auth.js v5. It suppo
   - GitHub OAuth 2.0
   - Microsoft Entra ID
   - Email + password (hashed with bcryptjs)
+- hCaptcha human verification on the credentials login and registration forms (server-side validation, opt-in)
 - Stateless JWT-based sessions (30 days by default)
 - Data persistence with Prisma + PostgreSQL
 - Edge rate limiting backed by Upstash Redis (sliding window: 20 requests per 60 seconds)
 - Middleware-level route protection and rate limiting
 - CSRF protection with dual Origin/Referer validation
 - Security response headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, X-XSS-Protection)
-- Full audit log covering registration, login, logout, email verification, and OAuth events
+- Full audit log covering registration, login, logout, email verification, OAuth events, and hCaptcha failures
 - User dashboard: profile management, change password, change name, sign out all devices, link/unlink OAuth providers
 - Gravatar avatar integration (SHA-256 hash)
 - Edge-safe configuration: the middleware bundle does not import Prisma or other Node.js-only modules
@@ -162,6 +163,30 @@ Used by the Edge rate limiter. Optional: when unset, rate limiting is disabled.
 4. Paste them into `.env` (local) or your hosting provider's environment variable settings (Vercel → Settings → Environment Variables).
 5. On Vercel, redeploy after changing environment variables; they only apply to new builds.
 
+#### `HCAPTCHA_SECRET` and `NEXT_PUBLIC_HCAPTCHA_SITEKEY` (optional)
+
+Optional human verification on the email/password login and registration forms. hCaptcha is **off by default**: as soon as you set both `HCAPTCHA_SECRET` and `NEXT_PUBLIC_HCAPTCHA_SITEKEY`, the widget is rendered on `/login` and `/register`, and the server starts rejecting submissions that fail the `siteverify` check. OAuth flows are not affected.
+
+1. Sign in at [dashboard.hcaptcha.com](https://dashboard.hcaptcha.com/) (free tier is sufficient) and click **New Site**.
+2. Fill in the site name (any name, for example `VCregistrar`), add your domains (for example `localhost` and `your-domain.com`), and click **Save**.
+3. On the site details page, copy the **Site Key** and paste it into `NEXT_PUBLIC_HCAPTCHA_SITEKEY`.
+4. Copy the **Secret** and paste it into `HCAPTCHA_SECRET`. Treat it as a server-only secret; never expose it to the browser.
+5. Restart the dev server / redeploy so the new environment variables take effect.
+
+```env
+# --- hCaptcha (optional, both must be set to enable) ---
+HCAPTCHA_SECRET="your-hcaptcha-secret"
+NEXT_PUBLIC_HCAPTCHA_SITEKEY="your-hcaptcha-sitekey"
+```
+
+Other related variables:
+
+- `HCAPTCHA_BYPASS="true"` — force the server to skip hCaptcha verification. **Local development only; never set in production.** When unset (or not equal to `"true"`), the bypass is off.
+- Verification calls `https://api.hcaptcha.com/siteverify` with a 5-second timeout; on any network error or non-`success` response the login/register endpoint returns HTTP 400 (with `code: "HCAPTCHA_FAILED"` for login, or a `?error=HCAPTCHA_FAILED` redirect for register). The user-facing error message is rendered by the form (`HCAPTCHA_FAILED` is mapped in the error dictionaries in `src/app/login/page.tsx` and `src/app/register/page.tsx`).
+- The client-side widget is provided by `src/components/HCaptcha.tsx` and the server-side helper lives in `src/lib/hcaptcha.ts`. The widget script (`https://js.hcaptcha.com/1/api.js`) is lazy-loaded on demand only when hCaptcha is enabled, so users without the env vars set pay no bandwidth cost.
+
+To disable hCaptcha again, simply unset the two variables (and redeploy on Vercel).
+
 
 ### Initialize the database
 
@@ -227,6 +252,36 @@ bun run start
 2. Configure the redirect URI: `http://localhost:3000/api/auth/callback/microsoft-entra-id`.
 3. Create a client secret under Certificates & secrets.
 4. Copy the Application (client) ID and the client secret into `AUTH_MICROSOFT_ENTRA_ID_CLIENT_ID` and `AUTH_MICROSOFT_ENTRA_ID_CLIENT_SECRET`.
+
+## hCaptcha Setup Guide
+
+hCaptcha adds a human-verification challenge to the email/password sign-in and sign-up forms. It is **off by default** and is only activated when both `HCAPTCHA_SECRET` (server) and `NEXT_PUBLIC_HCAPTCHA_SITEKEY` (client) are set.
+
+1. Create an account at [dashboard.hcaptcha.com](https://dashboard.hcaptcha.com/) and click **New Site**.
+2. Add the hostnames you will deploy on (for example `localhost`, `127.0.0.1`, and your production domain such as `your-domain.com`). Save.
+3. On the site details page, copy the **Site Key** (this is the public key used by the browser widget) and paste it into `NEXT_PUBLIC_HCAPTCHA_SITEKEY`.
+4. Copy the **Secret** (the server-side verification key) and paste it into `HCAPTCHA_SECRET`. Do **not** commit the secret.
+5. Add the same two variables to your hosting provider (Vercel → Settings → Environment Variables) and redeploy.
+
+```env
+# .env (do not commit)
+HCAPTCHA_SECRET="0x00000000-0000-0000-0000-000000000000"
+NEXT_PUBLIC_HCAPTCHA_SITEKEY="10000000-ffff-ffff-ffff-000000000001"
+```
+
+Verification flow:
+
+1. The user completes the hCaptcha challenge. The browser widget calls back with a one-time token (`h-captcha-response`).
+2. The form posts the token to `/api/auth/login` or `/api/auth/register`.
+3. The server calls `https://api.hcaptcha.com/siteverify` with the token and your secret. If the response is not `success: true`, the request is rejected (HTTP 400) and an audit log entry is written.
+4. Only then does the existing rate-limit / CSRF / credentials logic run.
+
+Notes:
+
+- OAuth (GitHub, Microsoft) is not gated by hCaptcha. If you want to protect OAuth callbacks as well, layer a similar check in `src/auth.ts` (not implemented by default).
+- `HCAPTCHA_BYPASS="true"` forces the server to skip verification. Leave this unset in production.
+- The client widget script is loaded lazily, so visitors who never reach `/login` or `/register` do not pay any bandwidth cost.
+- The `code: "HCAPTCHA_FAILED"` is also mapped to a user-friendly message in the login/register error dictionaries.
 
 ## Project Structure
 
@@ -359,6 +414,7 @@ Before going live, make sure to:
 - Update OAuth provider callback URLs in GitHub and Microsoft Entra ID to match the production domain.
 - Wire a production logging service into `logAudit` (replace the `console.*` calls with Datadog, CloudWatch, Axiom, etc.).
 - Set `nodeLinker: "hoisted"` and pre-build Prisma in the deployment if your platform does not run `postinstall` automatically (for Vercel this is handled by the build command).
+- If hCaptcha is enabled, make sure both `HCAPTCHA_SECRET` and `NEXT_PUBLIC_HCAPTCHA_SITEKEY` are set in the **Production** environment (and not just Preview / Development) on Vercel, and that the production domain is whitelisted in the hCaptcha dashboard.
 
 ### Production database connection (Supabase pooler)
 
@@ -415,6 +471,7 @@ If the command returns `1`, the pooler is reachable and the deployed app should 
 - 2FA / TOTP support.
 - Internationalization (i18n).
 - End-to-end testing with Playwright.
+- Optional hCaptcha enforcement on OAuth callbacks and password-reset forms.
 
 ## License
 

@@ -3,6 +3,7 @@ import { signIn } from "@/auth";
 import { validateCSRF, csrfErrorResponse } from "@/lib/csrf";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 import { logAudit, getClientIpFromRequest, getUserAgentFromRequest } from "@/lib/audit-log";
+import { verifyHCaptcha, isHCaptchaEnabled } from "@/lib/hcaptcha";
 
 const MAX_BODY_SIZE = 1024 * 5; // 5KB limit
 
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { email, password } = await req.json();
+    const { email, password, hcaptchaToken } = await req.json();
 
     if (!email || !password) {
       await logAudit({
@@ -71,6 +72,32 @@ export async function POST(req: NextRequest) {
         { error: "Email and password are required" },
         { status: 400 }
       );
+    }
+
+    // hCaptcha 校验(若 HCAPTCHA_SECRET 已配置)
+    if (isHCaptchaEnabled()) {
+      const captchaResult = await verifyHCaptcha(hcaptchaToken, {
+        remoteIp: ipAddress,
+      });
+      if (!captchaResult.success) {
+        await logAudit({
+          action: "LOGIN_ATTEMPT",
+          email,
+          ipAddress,
+          status: "failure",
+          details: `hCaptcha verification failed: ${
+            captchaResult["error-codes"]?.join(",") || "unknown"
+          }`,
+          userAgent,
+        });
+        return NextResponse.json(
+          {
+            error: "hCaptcha verification failed. Please complete the challenge.",
+            code: "HCAPTCHA_FAILED",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Log login attempt
@@ -88,6 +115,8 @@ export async function POST(req: NextRequest) {
         password,
         redirect: false,
       });
+      // 显式把 hcaptchaToken 传过去(若 authorize 内部用到,这里保持向后兼容)
+      void hcaptchaToken;
 
       // Log login success
       await logAudit({

@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header, DefaultLogo, type HeaderAction } from "@/components/Header";
 import { headerIcons } from "@/components/header-icons";
+import LoginForm from "@/components/LoginForm";
+import { isHCaptchaEnabled, getHCaptchaSiteKey } from "@/lib/hcaptcha";
 
 interface LoginPageProps {
   searchParams: Promise<{ error?: string; success?: string; callbackUrl?: string }>;
@@ -23,10 +25,15 @@ export default async function LoginPage(props: LoginPageProps) {
     OAuthAccountNotLinked: "This email is already linked to another account.",
     OAuthSignin: "Could not sign in with the selected provider.",
     OAuthCallback: "Could not complete the sign-in process.",
+    HCAPTCHA_FAILED: "hCaptcha verification failed. Please try again.",
     default: "An unexpected error occurred. Please try again.",
   };
 
   const errorMessage = error ? errorMessages[error] || errorMessages.default : null;
+
+  // 服务端读取 hCaptcha 开关与 sitekey(透传给客户端组件,让组件决定是否渲染 widget)
+  const hcaptchaEnabled = isHCaptchaEnabled();
+  const hcaptchaSiteKey = hcaptchaEnabled ? getHCaptchaSiteKey() : "";
 
   const actions: HeaderAction[] = [
     {
@@ -119,60 +126,11 @@ export default async function LoginPage(props: LoginPageProps) {
               </div>
             </div>
 
-            {/* Credentials Form */}
-            <form
-              action={async (formData: FormData) => {
-                "use server";
-                try {
-                  await signIn("credentials", {
-                    email: formData.get("email") as string,
-                    password: formData.get("password") as string,
-                    redirectTo: defaultRedirect,
-                  });
-                } catch (error: any) {
-                  const errorType = error?.type || error?.code || "CredentialsSignin";
-                  const baseUrl = "/login";
-                  const qs = `?error=${errorType}` + (callbackUrl ? `&callbackUrl=${encodeURIComponent(callbackUrl)}` : "");
-                  redirect(baseUrl + qs);
-                }
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="Enter your password"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-600 transition-colors"
-              >
-                Sign In
-              </button>
-            </form>
+            {/* Credentials Form (含 hCaptcha 校验) */}
+            <LoginForm
+              callbackUrl={defaultRedirect}
+              hcaptchaSiteKey={hcaptchaSiteKey}
+            />
           </div>
 
           {/* Footer */}

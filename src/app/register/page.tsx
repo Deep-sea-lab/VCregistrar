@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header, DefaultLogo, type HeaderAction } from "@/components/Header";
 import { headerIcons } from "@/components/header-icons";
+import RegisterForm from "@/components/RegisterForm";
+import { isHCaptchaEnabled, getHCaptchaSiteKey } from "@/lib/hcaptcha";
 
 interface RegisterPageProps {
   searchParams: Promise<{ error?: string; callbackUrl?: string }>;
@@ -20,10 +22,17 @@ export default async function RegisterPage(props: RegisterPageProps) {
     EMAIL_EXISTS: "A user with this email already exists.",
     WEAK_PASSWORD: "Password must be at least 8 characters.",
     MISSING_FIELDS: "Email and password are required.",
+    INVALID_EMAIL: "Please enter a valid email address.",
+    PASSWORD_WEAK: "Password must include uppercase, lowercase, and a number.",
+    HCAPTCHA_FAILED: "hCaptcha verification failed. Please try again.",
     default: "Registration failed. Please try again.",
   };
 
   const errorMessage = error ? errorMessages[error] || errorMessages.default : null;
+
+  // hCaptcha 透传
+  const hcaptchaEnabled = isHCaptchaEnabled();
+  const hcaptchaSiteKey = hcaptchaEnabled ? getHCaptchaSiteKey() : "";
 
   const actions: HeaderAction[] = [
     {
@@ -58,132 +67,11 @@ export default async function RegisterPage(props: RegisterPageProps) {
               </div>
             )}
 
-            <form
-              action={async (formData: FormData) => {
-                "use server";
-                const name = (formData.get("name") as string)?.trim();
-                const email = (formData.get("email") as string)?.trim();
-                const password = formData.get("password") as string;
-                const confirmPassword = formData.get("confirmPassword") as string;
-
-                if (!email || !password) {
-                  redirect(
-                    "/register?error=MISSING_FIELDS" +
-                      (callbackUrl
-                        ? `&callbackUrl=${encodeURIComponent(callbackUrl)}`
-                        : "")
-                  );
-                }
-
-                if (password.length < 8) {
-                  redirect(
-                    "/register?error=WEAK_PASSWORD" +
-                      (callbackUrl
-                        ? `&callbackUrl=${encodeURIComponent(callbackUrl)}`
-                        : "")
-                  );
-                }
-
-                if (password !== confirmPassword) {
-                  redirect(
-                    "/register?error=password_mismatch" +
-                      (callbackUrl
-                        ? `&callbackUrl=${encodeURIComponent(callbackUrl)}`
-                        : "")
-                  );
-                }
-
-                const res = await fetch(
-                  `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/auth/register`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ name, email, password }),
-                  }
-                );
-
-                if (!res.ok) {
-                  const data = await res.json().catch(() => ({}));
-                  const code = (data?.code as string) || "default";
-                  redirect(
-                    `/register?error=${code}` +
-                      (callbackUrl
-                        ? `&callbackUrl=${encodeURIComponent(callbackUrl)}`
-                        : "")
-                  );
-                }
-
-                const loginUrl = callbackUrl
-                  ? `/login?success=${encodeURIComponent("Account created! Please sign in.")}&callbackUrl=${encodeURIComponent(callbackUrl)}`
-                  : `/login?success=${encodeURIComponent("Account created! Please sign in.")}`;
-                redirect(loginUrl);
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-                  Name
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  autoComplete="name"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="Your name"
-                />
-              </div>
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  required
-                  autoComplete="email"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="At least 8 characters"
-                />
-              </div>
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-                  Confirm Password
-                </label>
-                <input
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  type="password"
-                  required
-                  minLength={8}
-                  autoComplete="new-password"
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm shadow-sm placeholder:text-gray-400 focus:border-gray-400 focus:outline-none focus:ring-1 focus:ring-gray-400"
-                  placeholder="Re-enter password"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full rounded-lg bg-green-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-600 transition-colors"
-              >
-                Create Account
-              </button>
-            </form>
+            {/* Register Form (含 hCaptcha 校验) */}
+            <RegisterForm
+              callbackUrl={callbackUrl}
+              hcaptchaSiteKey={hcaptchaSiteKey}
+            />
           </div>
 
           {/* Footer */}

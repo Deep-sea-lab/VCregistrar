@@ -15,13 +15,14 @@
   - GitHub OAuth 2.0
   - Microsoft Entra ID
   - 邮箱 + 密码（bcryptjs 哈希）
+- hCaptcha 人机验证：登录 / 注册页可选用，服务端二次校验，默认关闭
 - 基于 JWT 的无状态会话（默认 30 天）
 - 使用 Prisma + PostgreSQL 进行数据持久化
 - 基于 Upstash Redis 的边缘限流（滑动窗口 20 次/60 秒）
 - 中间件级别的路由保护与限流
 - Origin/Referer 双重校验的 CSRF 保护
 - 安全响应头（X-Content-Type-Options、X-Frame-Options、Referrer-Policy、Permissions-Policy、X-XSS-Protection）
-- 完整的审计日志，覆盖注册、登录、登出、邮箱验证、OAuth 事件
+- 完整的审计日志，覆盖注册、登录、登出、邮箱验证、OAuth 事件、hCaptcha 失败等
 - 用户仪表盘：资料管理、修改密码、修改名称、登出所有设备、关联/解绑 OAuth 账号
 - Gravatar 头像集成（SHA-256 哈希）
 - Edge-safe 配置：中间件 bundle 不会引入 Prisma 等 Node.js 专属模块
@@ -162,6 +163,30 @@ Microsoft Entra ID 的 OAuth 凭据。
 4. 粘贴到本地 `.env` 或托管平台的环境变量设置（Vercel → Settings → Environment Variables）。
 5. Vercel 修改环境变量后必须重新部署，新值只对新构建生效。
 
+#### `HCAPTCHA_SECRET` 与 `NEXT_PUBLIC_HCAPTCHA_SITEKEY`（可选）
+
+为邮箱密码登录、注册页添加人机验证。hCaptcha **默认关闭**：只有同时设置了 `HCAPTCHA_SECRET` 和 `NEXT_PUBLIC_HCAPTCHA_SITEKEY`，才会渲染 widget 并强制服务端校验。OAuth 流程不受影响。
+
+1. 在 [dashboard.hcaptcha.com](https://dashboard.hcaptcha.com/) 注册账号（免费版即可），点击 **New Site** 新建站点。
+2. 填写 Site name（任意，例如 `VCregistrar`），在 Hosts 中添加需要保护的域名（`localhost`、生产域名等），点击 **Save**。
+3. 在站点详情页把 **Site Key** 复制到 `NEXT_PUBLIC_HCAPTCHA_SITEKEY`。
+4. 把 **Secret** 复制到 `HCAPTCHA_SECRET`。Secret 是仅服务端可见的机密，绝不能提交到仓库。
+5. 重启开发服务器 / 重新部署，让新环境变量生效。
+
+```env
+# --- hCaptcha（可选，两个变量必须同时设置才生效）---
+HCAPTCHA_SECRET="your-hcaptcha-secret"
+NEXT_PUBLIC_HCAPTCHA_SITEKEY="your-hcaptcha-sitekey"
+```
+
+相关变量：
+
+- `HCAPTCHA_BYPASS="true"`：强制服务端跳过 hCaptcha 校验。**仅供本地开发使用，生产环境绝对不要设置**。未设置（或值不为 `"true"`）时绕过关闭。
+- 服务端通过 `https://api.hcaptcha.com/siteverify` 校验 token，超时 5 秒；校验失败时登录接口返回 HTTP 400（`code: "HCAPTCHA_FAILED"`），注册接口返回 `?error=HCAPTCHA_FAILED` 重定向。错误信息在 `src/app/login/page.tsx`、`src/app/register/page.tsx` 的错误字典中映射。
+- 客户端组件位于 `src/components/HCaptcha.tsx`，服务端工具位于 `src/lib/hcaptcha.ts`。hCaptcha 脚本（`https://js.hcaptcha.com/1/api.js`）仅在启用 hCaptcha 时按需懒加载，未启用时不会产生任何额外网络请求。
+
+需要关闭时直接取消上述两个变量（Vercel 改完别忘了重新部署）即可。
+
 
 ### 初始化数据库
 
@@ -228,6 +253,36 @@ bun run start
 3. 在 Certificates & secrets 创建客户端密钥。
 4. 复制 Application (client) ID 与 Secret，分别填入 `AUTH_MICROSOFT_ENTRA_ID_CLIENT_ID` 和 `AUTH_MICROSOFT_ENTRA_ID_CLIENT_SECRET`。
 
+## hCaptcha 接入指引
+
+hCaptcha 为邮箱密码登录 / 注册表单增加人机验证挑战。**默认关闭**，只有同时设置 `HCAPTCHA_SECRET`（服务端）和 `NEXT_PUBLIC_HCAPTCHA_SITEKEY`（前端）才会启用。
+
+1. 打开 [dashboard.hcaptcha.com](https://dashboard.hcaptcha.com/)，登录后点击 **New Site** 新建站点。
+2. 在 Hosts 中添加你将部署的所有域名（本地开发需要 `localhost`、`127.0.0.1`，生产环境需要 `your-domain.com`），保存。
+3. 站点详情页的 **Site Key**（浏览器 widget 使用的公钥）填入 `NEXT_PUBLIC_HCAPTCHA_SITEKEY`。
+4. 同页的 **Secret**（服务端校验用的密钥）填入 `HCAPTCHA_SECRET`。**不要**把 Secret 提交到代码仓库。
+5. 同样在托管平台（Vercel → Settings → Environment Variables）添加这两个变量，然后重新部署。
+
+```env
+# .env（不要提交到仓库）
+HCAPTCHA_SECRET="0x00000000-0000-0000-0000-000000000000"
+NEXT_PUBLIC_HCAPTCHA_SITEKEY="10000000-ffff-ffff-ffff-000000000001"
+```
+
+校验流程：
+
+1. 用户完成 hCaptcha 挑战后，浏览器 widget 回调拿到一次性 token（`h-captcha-response`）。
+2. 表单把 token 一并提交到 `/api/auth/login` 或 `/api/auth/register`。
+3. 服务端调用 `https://api.hcaptcha.com/siteverify` 校验；只要返回 `success !== true`，请求直接被拒绝（HTTP 400）并写入审计日志。
+4. 通过后才会进入原来的限流 / CSRF / 凭据校验逻辑。
+
+注意事项：
+
+- OAuth（GitHub、Microsoft）不受 hCaptcha 控制。如需给 OAuth 回调也加，可参考在 `src/auth.ts` 中实现（默认未启用）。
+- `HCAPTCHA_BYPASS="true"` 强制跳过校验。**仅**本地使用，生产环境绝不要设。
+- widget 脚本按需懒加载，访问其他页面的用户完全感知不到 hCaptcha 存在。
+- 错误码 `HCAPTCHA_FAILED` 已在登录/注册错误字典中映射为友好提示。
+
 ## 项目结构
 
 ```
@@ -286,9 +341,13 @@ VCregistrar/
 
 ### 3. CSRF 保护
 
-- 对 POST 请求校验 `Origin` 与 `Referer` 头。
-- 通过 `process.env.NEXTAUTH_URL` 配置允许的来源。
-- 校验失败时返回 HTTP 403。
+`src/lib/csrf.ts` 提供与 NEXTAUTH_URL 解耦的同源校验，避免 LAN/反代部署时被误判：
+
+- 仅对**非安全方法**（POST/PUT/PATCH/DELETE）做校验，GET/HEAD/OPTIONS 直接放行。
+- 优先信任浏览器元数据头 `Sec-Fetch-Site`：`same-origin` / `same-site` / `none` 放行，`cross-site` 拒绝；缺失时回退。
+- 回退到 `Origin` / `Referer`：取其 host 与请求 `Host` 头比较，相同视为同源。`NEXTAUTH_URL` 不再作为唯一白名单，因此用 `http://192.168.x.x:3000` 与 `http://localhost:3000` 访问同样可用。
+- 校验失败时返回 HTTP 403，并把事件写入审计日志（`action: LOGIN_ATTEMPT` / `REGISTRATION_ATTEMPT`，`details: "CSRF validation failed"`）。
+- 内部脚本/CI 可发送 `X-Skip-CSRF: <AUTH_SECRET>` 头来显式绕过（生产环境请勿在浏览器侧启用）。
 
 ### 4. 安全响应头
 
@@ -357,6 +416,7 @@ VCregistrar/
 - 在 GitHub 与 Microsoft Entra ID 中更新 OAuth 回调 URL，使其与生产域名一致。
 - 接入生产级日志服务（用 Datadog、CloudWatch、Axiom 等替换 `logAudit` 中的 `console.*`）。
 - 如果托管平台不自动跑 `postinstall`，请设置 `nodeLinker: "hoisted"` 并在构建时显式生成 Prisma Client。Vercel 可在 Build Command 里直接写。
+- 如果启用了 hCaptcha，确认 `HCAPTCHA_SECRET` 和 `NEXT_PUBLIC_HCAPTCHA_SITEKEY` 在 Vercel 的 **Production** 环境（不仅是 Preview / Development）都设置了，并且生产域名已在 hCaptcha 控制台的白名单中。
 
 ### 生产数据库连接（Supabase 连接池）
 
@@ -413,6 +473,7 @@ psql "postgresql://postgres.[project]:[PASSWORD]@aws-1-ap-southeast-1.pooler.sup
 - 2FA / TOTP 支持。
 - 国际化（i18n）。
 - 端到端测试（Playwright）。
+- 在 OAuth 回调与密码重置流程中可选启用 hCaptcha。
 
 ## 许可
 
