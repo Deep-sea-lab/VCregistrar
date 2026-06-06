@@ -31,13 +31,24 @@ export const authConfig = {
   // providers 留空数组在中间件中,只用于让 next-auth 识别类型
   providers: [],
   callbacks: {
+    // Edge 端的最小 jwt: 只在 login 触发时跑,作为 auth.ts jwt 的无 DB 时的轻量语义保留
+    // (实际登录路径在 Node 端, 会被 auth.ts 的 jwt 覆盖, 详见 auth.ts 注释)
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role || "USER";
+        // 尝试从 user 上携带 createdAt/updatedAt(来自 authorize / adapter)
+        if ((user as any).createdAt) {
+          token.createdAt = (user as any).createdAt;
+        }
+        if ((user as any).updatedAt) {
+          token.updatedAt = (user as any).updatedAt;
+        }
       }
       return token;
     },
+    // Edge 端 (middleware) 的 session: 只需判断登录态, 透出 id/role
+    // createdAt/updatedAt 由 auth.ts 覆盖的 session 回调(运行在 Node 端)从 DB 兑底处理
     async session({ session, token }) {
       if (token && session.user) {
         (session.user as any).id = token.id;

@@ -58,12 +58,102 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           role: user.role,
+          // 服务端认证信息回调: 同时返回注册时间与更新时间
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
         };
       },
     }),
   ],
   callbacks: {
     ...authConfig.callbacks,
+    // 覆盖 jwt 回调(运行在 Node 端): OAuth 首次登录时,
+    // NextAuth 默认从 adapter 返回的 user 不一定带 createdAt/updatedAt,
+    // 这里从数据库补齐后写到 token。
+    async jwt({ token, user, trigger, session }) {
+      if (user) {
+        // 第一次登录 / Credentials: 优先取 user 上自带的字段
+        if ((user as any).createdAt) {
+          token.createdAt = (user as any).createdAt;
+        }
+        if ((user as any).updatedAt) {
+          token.updatedAt = (user as any).updatedAt;
+        }
+
+        // OAuth 首次登录没带时间字段 -> 从数据库补齐
+        if (!token.createdAt || !token.updatedAt) {
+          try {
+            const dbUser = await prisma.user.findUnique({
+              where: { id: user.id as string },
+              select: { createdAt: true, updatedAt: true },
+            });
+            if (dbUser) {
+              token.createdAt = token.createdAt ?? dbUser.createdAt;
+              token.updatedAt = token.updatedAt ?? dbUser.updatedAt;
+            }
+          } catch {
+            // 静默失败, 不影响登录流程
+          }
+        }
+      }
+
+      // 后续请求 / 旧 cookie: token 上可能没有时间字段(迁移前发放的 token)
+      // 这里兜底从数据库读取一次, 以后每次续期都会带上
+      if (token && token.id && (!token.createdAt || !token.updatedAt)) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { createdAt: true, updatedAt: true },
+          });
+          if (dbUser) {
+            token.createdAt = token.createdAt ?? dbUser.createdAt;
+            token.updatedAt = token.updatedAt ?? dbUser.updatedAt;
+          }
+        } catch {
+          // 静默失败
+        }
+      }
+
+      // 显式调用 update() 时, 允许外部传入新的 updatedAt(例如修改名称后)
+      if (trigger === "update" && session) {
+        if ((session as any).updatedAt) {
+          token.updatedAt = (session as any).updatedAt;
+        }
+      }
+
+      return token;
+    },
+    // 覆盖 session 回调(运行在 Node 端): 兜底从数据库读取 createdAt/updatedAt
+    // 避免旧 token / token 被转码 丢字段导致 session.user.createdAt 为 null
+    async session({ session, token }) {
+      if (token && session.user) {
+        (session.user as any).id = token.id;
+        (session.user as any).role = token.role;
+        (session.user as any).createdAt = (token as any).createdAt ?? null;
+        (session.user as any).updatedAt = (token as any).updatedAt ?? null;
+
+        // 兜底: 如果 token 仍然没拿到, 直接从 DB 查一次
+        if (
+          (!(session.user as any).createdAt ||
+            !(session.user as any).updatedAt) &&
+          token.id
+        ) {
+          try {
+            const dbUser = await prisma.user.findUnique({
+              where: { id: token.id as string },
+              select: { createdAt: true, updatedAt: true },
+            });
+            if (dbUser) {
+              (session.user as any).createdAt = dbUser.createdAt;
+              (session.user as any).updatedAt = dbUser.updatedAt;
+            }
+          } catch {
+            // 静默失败
+          }
+        }
+      }
+      return session;
+    },
     async signIn({ user, account }) {
       // 如果是 OAuth 登录(非 Credentials)
       if (account?.provider && account.provider !== "credentials") {
