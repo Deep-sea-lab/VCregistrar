@@ -1,0 +1,299 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg: #ffffff;
+  --color-fg: #111827;
+  --color-card: #ffffff;
+  --color-card-border: #e5e7eb;
+  --color-muted: #6b7280;
+  --color-subtle: #f9fafb;
+  --color-subtle-border: #f3f4f6;
+  --color-input: #ffffff;
+  --color-input-border: #d1d5db;
+  --color-code-bg: #111827;
+  --color-code-fg: #d1d5db;
+  --color-cta: #111827;
+  --color-cta-fg: #ffffff;
+  --color-cta-hover: #1f2937;
+  --color-card-hover: #f9fafb;
+  --color-link: #111827;
+}
+
+:root.dark {
+  --color-bg: #0a0a0a;
+  --color-fg: #f3f4f6;
+  --color-card: #111111;
+  --color-card-border: #262626;
+  --color-muted: #9ca3af;
+  --color-subtle: #171717;
+  --color-subtle-border: #262626;
+  --color-input: #0f0f0f;
+  --color-input-border: #404040;
+  --color-code-bg: #000000;
+  --color-code-fg: #d4d4d4;
+  --color-cta: #f3f4f6;
+  --color-cta-fg: #111827;
+  --color-cta-hover: #e5e7eb;
+  --color-card-hover: #1f1f1f;
+  --color-link: #f3f4f6;
+}
+
+html, body {
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Dark mode color fixes                                                    */
+/* ----------------------------------------------------------------------- */
+
+/* Force proper background in dark mode for sections that use bg-white/gray */
+.dark .bg-white {
+  background-color: var(--color-card) !important;
+}
+.dark .bg-gray-50 {
+  background-color: var(--color-bg) !important;
+}
+.dark .bg-gray-100 {
+  background-color: var(--color-subtle) !important;
+}
+/* Default bg-gray-900 → keep dark; the provider chips / "Update avatar" CTA
+   overrides below turn into a light surface inside the dashboard so they
+   remain visible against the deep-black page background. */
+.dark .bg-gray-900 {
+  background-color: #000000 !important;
+}
+
+/* Sticky header uses bg-white/80 — in dark mode it became a translucent
+   white. Replace it with a solid dark surface (small backdrop blur stays). */
+.dark header.bg-white\/80,
+.dark .bg-white\/80 {
+  background-color: rgba(10, 10, 10, 0.85) !important;
+  border-color: var(--color-card-border) !important;
+}
+
+/* Text color overrides */
+.dark .text-gray-900 {
+  color: var(--color-fg) !important;
+}
+.dark .text-gray-800 {
+  color: #e5e7eb !important;
+}
+.dark .text-gray-700 {
+  color: #d1d5db !important;
+}
+.dark .text-gray-600 {
+  color: var(--color-muted) !important;
+}
+.dark .text-gray-500 {
+  color: var(--color-muted) !important;
+}
+.dark .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+/* SVG / icon color fixes. Many of the icons in the project use the
+   Tailwind `text-gray-XXX` palette, which is fine for light mode but
+   becomes hard to see on a dark surface. Re-map them to readable
+   values when the page is in dark mode. */
+.dark svg.text-gray-900,
+.dark svg.text-gray-800,
+.dark svg.text-gray-700,
+.dark .text-gray-900 svg,
+.dark .text-gray-800 svg,
+.dark .text-gray-700 svg {
+  color: var(--color-fg) !important;
+}
+
+.dark .text-gray-600 svg,
+.dark .text-gray-500 svg,
+.dark .text-gray-400 svg,
+.dark svg.text-gray-600,
+.dark svg.text-gray-500,
+.dark svg.text-gray-400 {
+  color: var(--color-muted) !important;
+}
+
+/* Decorative dot / bullet / bullet-circle helpers used across pages
+   (e.g. <span class="h-1.5 w-1.5 rounded-full bg-gray-400" />). These
+   are black-ish in light mode and disappear on a dark background. */
+.dark .bg-gray-400 {
+  background-color: #6b7280 !important;
+}
+.dark .bg-gray-300 {
+  background-color: #525252 !important;
+}
+.dark .bg-gray-200 {
+  background-color: var(--color-card-border) !important;
+}
+.dark .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+}
+.dark .bg-red-50,
+.dark .bg-red-50\/40 {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+}
+.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+.dark .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+.dark .border-green-200 {
+  border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+/* CTA badges that hard-code green-100/green-700 need darker variants. */
+.dark .text-green-700 {
+  color: #4ade80 !important;
+}
+.dark .text-red-700 {
+  color: #f87171 !important;
+}
+.dark .text-red-600 {
+  color: #f87171 !important;
+}
+.dark .text-green-600 {
+  color: #4ade80 !important;
+}
+
+/* Border color overrides */
+.dark .border-gray-200 {
+  border-color: var(--color-card-border) !important;
+}
+.dark .border-gray-100 {
+  border-color: var(--color-subtle-border) !important;
+}
+.dark .border-gray-300 {
+  border-color: var(--color-input-border) !important;
+}
+.dark .ring-gray-200 {
+  --tw-ring-color: var(--color-card-border) !important;
+}
+
+/* Hover overrides */
+.dark .hover\:bg-gray-50:hover {
+  background-color: var(--color-card-hover) !important;
+}
+.dark .hover\:bg-gray-200:hover {
+  background-color: var(--color-card-hover) !important;
+}
+
+/* The right column "Sign-in methods" pill uses bg-gray-50 in the
+   dashboard — give it a subtle dark variant. */
+.dark .bg-gray-50\/100,
+.dark .bg-gray-50 {
+  background-color: var(--color-subtle) !important;
+}
+
+/* Dividers / hairlines */
+.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-subtle-border) !important;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Dark mode — black-on-black icons & buttons                              */
+/* ----------------------------------------------------------------------- */
+
+/* GitHub / Microsoft provider chips use bg-gray-900 + text-white. In dark
+   mode they would be invisible against the page background. Invert them to
+   a light surface with a dark icon, matching the contrast we have in light
+   mode. */
+.dark span.bg-gray-900 {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  border: 1px solid var(--color-card-border) !important;
+}
+
+/* The dashboard "Update avatar on Gravatar" button is a bg-gray-900 pill
+   with white text. In dark mode it becomes a black hole. Render it as a
+   light pill so it stays visible. */
+.dark a.bg-gray-900,
+.dark button.bg-gray-900 {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb !important;
+}
+.dark a.hover\:bg-gray-800:hover,
+.dark button.hover\:bg-gray-800:hover {
+  background-color: #e5e7eb !important;
+  color: #111827 !important;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Dark mode — form inputs                                                  */
+/* ----------------------------------------------------------------------- */
+
+.dark input,
+.dark textarea,
+.dark select {
+  background-color: var(--color-input) !important;
+  color: var(--color-fg) !important;
+  border-color: var(--color-input-border) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #6b7280 !important;
+}
+.dark input:focus,
+.dark textarea:focus,
+.dark select:focus {
+  --tw-ring-color: var(--color-input-border) !important;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Dark mode — primary submit buttons                                      */
+/* ------------------------------------------------------------------- */
+
+/* Login button (bg-gray-900 / hover:bg-gray-800) — same logic as the
+   dashboard CTA. Render as a light pill with dark text. */
+.dark button.bg-gray-900 {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+  border: 1px solid #e5e7eb !important;
+}
+.dark button.hover\:bg-gray-800:hover {
+  background-color: #e5e7eb !important;
+  color: #111827 !important;
+}
+
+/* ----------------------------------------------------------------------- */
+/* Theme toggle button                                                      */
+/* ----------------------------------------------------------------------- */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 0.625rem;
+  border: 1px solid var(--color-card-border);
+  background-color: var(--color-card);
+  color: var(--color-fg);
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease, transform 0.15s ease;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  padding: 0;
+}
+
+.theme-toggle-btn:hover {
+  background-color: var(--color-card-hover);
+  border-color: var(--color-input-border);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.theme-toggle-btn:focus-visible {
+  outline: 2px solid var(--color-fg);
+  outline-offset: 2px;
+}
+
+.theme-toggle-btn svg {
+  color: currentColor;
+}
