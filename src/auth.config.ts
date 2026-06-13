@@ -37,22 +37,28 @@ export const authConfig = {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role || "USER";
-        // 尝试从 user 上携带 createdAt/updatedAt(来自 authorize / adapter)
+        // 尝试从 user 上携带 createdAt/updatedAt/lastLoginAt(来自 authorize / adapter)
         if ((user as any).createdAt) {
           token.createdAt = (user as any).createdAt;
         }
         if ((user as any).updatedAt) {
           token.updatedAt = (user as any).updatedAt;
         }
+        if ((user as any).lastLoginAt) {
+          token.lastLoginAt = (user as any).lastLoginAt;
+        }
       }
       return token;
     },
     // Edge 端 (middleware) 的 session: 只需判断登录态, 透出 id/role
-    // createdAt/updatedAt 由 auth.ts 覆盖的 session 回调(运行在 Node 端)从 DB 兑底处理
+    // createdAt/updatedAt/lastLoginAt 由 auth.ts 覆盖的 session 回调(运行在 Node 端)从 DB 兑底处理
     async session({ session, token }) {
       if (token && session.user) {
         (session.user as any).id = token.id;
         (session.user as any).role = token.role;
+        (session.user as any).createdAt = (token as any).createdAt ?? null;
+        (session.user as any).updatedAt = (token as any).updatedAt ?? null;
+        (session.user as any).lastLoginAt = (token as any).lastLoginAt ?? null;
       }
       return session;
     },

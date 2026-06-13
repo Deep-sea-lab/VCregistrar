@@ -38,7 +38,7 @@
 
     <div class="header">
         <h1>VCregistrar 全功能综合调试控制台</h1>
-        <p class="config-text">认证中心 (Auth Server): <code id="displayAuthUrl">http://localhost:3000</code></p>
+        <p class="config-text">认证中心 (Auth Server): <code id="displayAuthUrl">http://127.0.0.1:3000</code></p>
         <p class="config-text">当前客户端地址 (Client APP): <code id="displayClientUrl">获取中...</code> <span id="loginStatus" class="status-badge">检测中...</span></p>
     </div>
 
@@ -113,7 +113,7 @@
     <pre id="output" class="console">等待操作...</pre>
 
     <script>
-        const AUTH_SERVER = 'http://localhost:3000';
+        const AUTH_SERVER = 'http://127.0.0.1:3000';
         const APP_CALLBACK = window.location.href.split('?')[0];
         
         // 初始化显示配置

@@ -9,17 +9,18 @@ generator client {
 }
 
 model User {
-  id               String    @id @default(cuid())
-  name             String?
-  email            String?   @unique
-  role             String    @default("USER")
-  emailVerified    DateTime? @map("email_verified")
-  passwordHash     String?   @map("password_hash")
-  gravatarEnabled  Boolean   @default(true) @map("gravatar_enabled")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  accounts         Account[]
-  sessions         Session[]
+  id              String    @id @default(cuid())
+  name            String?
+  email           String?   @unique
+  role            String    @default("USER")
+  emailVerified   DateTime? @map("email_verified")
+  passwordHash    String?   @map("password_hash")
+  gravatarEnabled Boolean   @default(true) @map("gravatar_enabled")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  accounts        Account[]
+  sessions        Session[]
 
   @@map("users")
 }

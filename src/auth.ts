@@ -53,14 +53,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           return null;
         }
 
+        // 凭据登录成功: 更新 lastLoginAt 为当前时间
+        // 用 try/catch 包裹, 写库失败不影响登录主流程
+        let lastLoginAt: Date = new Date();
+        try {
+          const updated = await prisma.user.update({
+            where: { id: user.id },
+            data: { lastLoginAt },
+            select: { lastLoginAt: true },
+          });
+          lastLoginAt = updated.lastLoginAt ?? lastLoginAt;
+        } catch {
+          // 静默失败, 仍然允许登录
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
-          // 服务端认证信息回调: 同时返回注册时间与更新时间
+          // 服务端认证信息回调: 同时返回注册时间、更新时间与最近登录时间
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
+          lastLoginAt,
         };
       },
     }),
@@ -68,10 +83,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     ...authConfig.callbacks,
     // 覆盖 jwt 回调(运行在 Node 端): OAuth 首次登录时,
-    // NextAuth 默认从 adapter 返回的 user 不一定带 createdAt/updatedAt,
-    // 这里从数据库补齐后写到 token。
+    // NextAuth 默认从 adapter 返回的 user 不一定带 createdAt/updatedAt/lastLoginAt,
+    // 这里从数据库补齐后写到 token.
     async jwt({ token, user, trigger, session }) {
       if (user) {
+        // 写入核心字段 id / role(避免 jwt 覆盖回调丢失)
+        token.id = user.id;
+        token.role = (user as any).role || "USER";
         // 第一次登录 / Credentials: 优先取 user 上自带的字段
         if ((user as any).createdAt) {
           token.createdAt = (user as any).createdAt;
@@ -79,17 +97,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if ((user as any).updatedAt) {
           token.updatedAt = (user as any).updatedAt;
         }
+        if ((user as any).lastLoginAt) {
+          token.lastLoginAt = (user as any).lastLoginAt;
+        }
 
         // OAuth 首次登录没带时间字段 -> 从数据库补齐
-        if (!token.createdAt || !token.updatedAt) {
+        if (!token.createdAt || !token.updatedAt || !token.lastLoginAt) {
           try {
             const dbUser = await prisma.user.findUnique({
               where: { id: user.id as string },
-              select: { createdAt: true, updatedAt: true },
+              select: { createdAt: true, updatedAt: true, lastLoginAt: true },
             });
             if (dbUser) {
               token.createdAt = token.createdAt ?? dbUser.createdAt;
               token.updatedAt = token.updatedAt ?? dbUser.updatedAt;
+              token.lastLoginAt = token.lastLoginAt ?? dbUser.lastLoginAt;
             }
           } catch {
             // 静默失败, 不影响登录流程
@@ -99,15 +121,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       // 后续请求 / 旧 cookie: token 上可能没有时间字段(迁移前发放的 token)
       // 这里兜底从数据库读取一次, 以后每次续期都会带上
-      if (token && token.id && (!token.createdAt || !token.updatedAt)) {
+      if (token && token.id && (!token.createdAt || !token.updatedAt || !token.lastLoginAt)) {
         try {
           const dbUser = await prisma.user.findUnique({
             where: { id: token.id as string },
-            select: { createdAt: true, updatedAt: true },
+            select: { createdAt: true, updatedAt: true, lastLoginAt: true },
           });
           if (dbUser) {
             token.createdAt = token.createdAt ?? dbUser.createdAt;
             token.updatedAt = token.updatedAt ?? dbUser.updatedAt;
+            token.lastLoginAt = token.lastLoginAt ?? dbUser.lastLoginAt;
           }
         } catch {
           // 静默失败
@@ -119,11 +142,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if ((session as any).updatedAt) {
           token.updatedAt = (session as any).updatedAt;
         }
+        if ((session as any).lastLoginAt) {
+          token.lastLoginAt = (session as any).lastLoginAt;
+        }
       }
 
       return token;
     },
-    // 覆盖 session 回调(运行在 Node 端): 兜底从数据库读取 createdAt/updatedAt
+    // 覆盖 session 回调(运行在 Node 端): 兜底从数据库读取 createdAt/updatedAt/lastLoginAt
     // 避免旧 token / token 被转码 丢字段导致 session.user.createdAt 为 null
     async session({ session, token }) {
       if (token && session.user) {
@@ -131,21 +157,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         (session.user as any).role = token.role;
         (session.user as any).createdAt = (token as any).createdAt ?? null;
         (session.user as any).updatedAt = (token as any).updatedAt ?? null;
+        (session.user as any).lastLoginAt = (token as any).lastLoginAt ?? null;
 
         // 兜底: 如果 token 仍然没拿到, 直接从 DB 查一次
         if (
           (!(session.user as any).createdAt ||
-            !(session.user as any).updatedAt) &&
+            !(session.user as any).updatedAt ||
+            !(session.user as any).lastLoginAt) &&
           token.id
         ) {
           try {
             const dbUser = await prisma.user.findUnique({
               where: { id: token.id as string },
-              select: { createdAt: true, updatedAt: true },
+              select: { createdAt: true, updatedAt: true, lastLoginAt: true },
             });
             if (dbUser) {
               (session.user as any).createdAt = dbUser.createdAt;
               (session.user as any).updatedAt = dbUser.updatedAt;
+              (session.user as any).lastLoginAt = dbUser.lastLoginAt;
             }
           } catch {
             // 静默失败
@@ -168,7 +197,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         if (existingAccount) {
-          // 已关联,直接放行
+          // 已关联,直接放行, 同时刷新 lastLoginAt
+          try {
+            await prisma.user.update({
+              where: { id: user.id as string },
+              data: { lastLoginAt: new Date() },
+            });
+          } catch {
+            // 静默失败, 不影响登录主流程
+          }
           return true;
         }
 
@@ -183,6 +220,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             // 邮箱已存在于另一账户,不自动关联
             // 用户需要登录后手动关联账户
             return false;
+          }
+        }
+
+        // 新 OAuth 关联: 创建用户后由 adapter 写入, 这里也写一次 lastLoginAt
+        // (新用户创建后 adapter 会调用 createUser, 然后 signIn 结束;
+        //  此处 user.id 对新用户来说可能已由 adapter 分配, 我们补一刀 lastLoginAt)
+        if (user?.id) {
+          try {
+            await prisma.user.update({
+              where: { id: user.id as string },
+              data: { lastLoginAt: new Date() },
+            });
+          } catch {
+            // 静默失败
           }
         }
       }
